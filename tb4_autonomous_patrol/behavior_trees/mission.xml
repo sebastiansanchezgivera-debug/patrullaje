@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root BTCPP_format="4" main_tree_to_execute="Mission">
+  <BehaviorTree ID="Mission">
+    <!-- El supervisor toma decisiones. Los indicadores reflejan estado en Groot2
+         pero NO controlan los motores ni sustituyen Collision Monitor. -->
+    <Parallel name="Patrullaje_Autonomo" success_count="1" failure_count="1">
+      <MissionSupervisor name="Supervisor_Nav2_Bateria_Emergencias"
+                         state="{mission_state}" station="{station_pendiente}"/>
+      <ReactiveFallback name="Estado_En_Tiempo_Real">
+        <MissionStateIndicator name="01_LiDAR_Sin_Datos" equals="LIDAR_NO_VALIDO" state="{mission_state}"/>
+        <MissionStateIndicator name="02_Bateria_Sin_Datos" equals="BATERIA_SIN_DATOS" state="{mission_state}"/>
+        <MissionStateIndicator name="03_Bloqueo_Esperar" equals="OBSTACLE_WAIT" state="{mission_state}"/>
+        <MissionStateIndicator name="04_Evasion_Solicitada" equals="AVOID_REQUESTED" state="{mission_state}"/>
+        <MissionStateIndicator name="04b_Giro_Recuperacion" equals="RECOVERY_SPIN" state="{mission_state}"/>
+        <MissionStateIndicator name="05a_Docking" equals="DOCKING" state="{mission_state}"/>
+        <MissionStateIndicator name="05b_Docked" equals="DOCKED" state="{mission_state}"/>
+        <MissionStateIndicator name="05c_Undocking" equals="UNDOCKING" state="{mission_state}"/>
+        <MissionStateIndicator name="05_Regresar_A_Carga" equals="RETURNING_HOME" state="{mission_state}"/>
+        <MissionStateIndicator name="06_Espera_En_Carga" equals="STANDBY_HOME" state="{mission_state}"/>
+        <MissionStateIndicator name="07_Emergencia_En_Ruta" equals="EMERGENCY_NAV" state="{mission_state}"/>
+        <MissionStateIndicator name="08_Emergencia_En_Destino" equals="EMERGENCY_ON_SITE" state="{mission_state}"/>
+        <MissionStateIndicator name="09_Espera_En_Estacion" equals="STATION_WAIT" state="{mission_state}"/>
+        <MissionStateIndicator name="10_Patrullaje_Continuo" equals="PATROLLING" state="{mission_state}"/>
+        <MissionStateIndicator name="11_Cancelando" equals="CANCELLING" state="{mission_state}"/>
+        <MissionStateIndicator name="12_Fallo" equals="FAULT" state="{mission_state}"/>
+        <MissionStateIndicator name="99_Otro_Estado" equals="*" state="{mission_state}"/>
+      </ReactiveFallback>
+    </Parallel>
+  </BehaviorTree>
+  <TreeNodesModel>
+    <Action ID="MissionSupervisor">
+      <output_port name="state" type="std::string" description="Estado actual"/>
+      <output_port name="station" type="int" description="Estacion pendiente"/>
+    </Action>
+    <Action ID="MissionStateIndicator">
+      <input_port name="state" type="std::string" description="Estado del supervisor"/>
+      <input_port name="equals" type="std::string" description="Estado a mostrar, o *"/>
+    </Action>
+  </TreeNodesModel>
+</root>

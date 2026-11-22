@@ -1,0 +1,33 @@
+# SOLO SIMULACION STAGE, Nav2 HUMBLE. NO USAR EN TURTLEBOT4 REAL.
+# Alternativa a FrontStop: comprueba colision predicha contra el
+# radio del robot. En rotacion pura sobre el centro, no bloquea
+# por un obstaculo que este fuera del circulo barrido.
+# CAMBIO DE PROTECCION: esta variante NO conserva un STOP FIJO a 0.45 m.
+# La parada anticipada a 0.45 m se gestiona mediante el supervisor;
+# ApproachFootprint reduce velocidad segun tiempo hasta colision.
+# Ante dudas sobre sensores/costmap/cobertura, restaurar el monitor anterior.
+collision_monitor:
+  ros__parameters:
+    use_sim_time: true
+    base_frame_id: "robot_0/base_link"
+    odom_frame_id: "robot_0/odom"
+    cmd_vel_in_topic: "/cmd_vel_raw"
+    cmd_vel_out_topic: "/cmd_vel"
+    transform_tolerance: 0.3
+    source_timeout: 0.5
+    base_shift_correction: true
+    stop_pub_timeout: 2.0
+    polygons: ["ApproachFootprint"]
+    ApproachFootprint:
+      type: "circle"
+      radius: 0.28
+      action_type: "approach"
+      time_before_collision: 2.0
+      simulation_time_step: 0.05
+      max_points: 1
+      visualize: true
+      polygon_pub_topic: "/approach_footprint_zone"
+    observation_sources: ["scan"]
+    scan:
+      type: "scan"
+      topic: "/base_scan"

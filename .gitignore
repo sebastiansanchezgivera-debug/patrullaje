@@ -1,0 +1,26 @@
+build/
+install/
+log/
+**/__pycache__/
+*.pyc
+*.swp
+*.bak
+*.orig
+*.rej
+*.db3
+*.mcap
+.ros/
+.env
+.env.*
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+*.log
+.DS_Store
+
+# Metadatos de Windows
+*:Zone.Identifier
+
+# Respaldos temporales
+*.before_nav2_thread

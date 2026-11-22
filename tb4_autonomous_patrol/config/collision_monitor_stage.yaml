@@ -1,0 +1,49 @@
+# ROS 2 Humble / Stage, lectura /base_scan (robot_0/laser, desplazamiento x=+0.15 m)
+# CUIDADO: solo Stage; verificar TF y dimensiones antes de usar en un TurtleBot4 fisico.
+collision_monitor:
+  ros__parameters:
+    use_sim_time: true
+    base_frame_id: "robot_0/base_link"
+    odom_frame_id: "robot_0/odom"
+    cmd_vel_in_topic: "/cmd_vel_raw"
+    cmd_vel_out_topic: "/cmd_vel"
+    transform_tolerance: 0.3
+    source_timeout: 0.5
+    base_shift_correction: true
+    stop_pub_timeout: 2.0
+    polygons: ["FrontStop"]
+    FrontStop:
+      type: "polygon"
+      points:
+        - 0.15
+        - 0.0
+        - 0.584667
+        - -0.116469
+        - 0.590166
+        - -0.09356
+        - 0.59446
+        - -0.070396
+        - 0.597535
+        - -0.047038
+        - 0.599383
+        - -0.023551
+        - 0.6
+        - 0.0
+        - 0.599383
+        - 0.023551
+        - 0.597535
+        - 0.047038
+        - 0.59446
+        - 0.070396
+        - 0.590166
+        - 0.09356
+        - 0.584667
+        - 0.116469
+      action_type: "stop"
+      max_points: 0
+      visualize: true
+      polygon_pub_topic: "/front_stop_zone"
+    observation_sources: ["scan"]
+    scan:
+      type: "scan"
+      topic: "/base_scan"

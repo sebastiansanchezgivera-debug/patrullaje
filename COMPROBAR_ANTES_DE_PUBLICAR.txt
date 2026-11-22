@@ -1,0 +1,8 @@
+ANTES DE SUBIR A GITHUB:
+1. Revisar: git status / git diff --cached (si ya creaste el repositorio).
+2. Eliminar contraseñas, tokens, claves SSH, IPs privadas sensibles o datos personales.
+3. Confirmar que el último código incluye los arreglos de Spin y antibucles; esta exportación
+   copia lo que exista EN TU WORKSPACE cuando la ejecutes.
+4. Confirmar que config/nav2_stage.yaml y mundo Stage necesarios están incluidos.
+5. Verificar en otra PC el build y los lanzamientos, no asumir portabilidad automática.
+6. No activar modo físico sin verificar LiDAR, frames, batería, docking y protección.

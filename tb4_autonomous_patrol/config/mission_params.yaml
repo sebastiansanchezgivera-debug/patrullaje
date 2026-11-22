@@ -1,0 +1,55 @@
+tb4_autonomous_patrol:
+  ros__parameters:
+    use_sim_time: true
+
+    station_1_x: 0.28907108306884766
+    station_1_y: 0.05821871757507324
+    station_1_yaw: 0.0
+    station_1_wait_sec: 2.0
+
+    station_2_x: 19.907833099365234
+    station_2_y: -0.03801417350769043
+    station_2_yaw: 0.0
+    station_2_wait_sec: 2.0
+
+    station_3_x: 11.876189231872559
+    station_3_y: -7.791070938110352
+    station_3_yaw: 0.0
+    station_3_wait_sec: 2.0
+
+    # OBLIGATORIO configurar con un punto real del mapa.
+    home_x: 10.260343551635742
+    home_y: 10.179863626748535
+    home_yaw: 0.0
+
+    laser_topic: /base_scan
+    stop_distance: 0.45
+    front_half_angle_deg: 15.0
+    laser_timeout_sec: 0.7
+    avoid_attempt_timeout_sec: 15.0
+
+    battery_topic: /battery_state
+    simulate_battery: true
+    sim_battery_pct: 100.0
+    battery_threshold_pct: 20.0
+    battery_resume_pct: 25.0
+    battery_timeout_sec: 5.0
+
+    # Nuevos parametros v2 (valores originales conservados arriba)
+    enable_spin_recovery: true
+    recovery_spin_deg: 35.0
+    recovery_max_spins: 3
+    recovery_spin_timeout_sec: 10.0
+    robot_radius_m: 0.22
+    recovery_margin_m: 0.06
+    recovery_laser_x_m: 0.15
+    allow_partial_scan_sim_only: false
+    simulate_docking: true
+    enable_real_docking: false
+    dock_action_name: /dock
+    undock_action_name: /undock
+    dock_status_topic: /dock_status
+    sim_dock_duration_sec: 3.0
+    sim_undock_duration_sec: 3.0
+    dock_timeout_sec: 65.0
+    undock_timeout_sec: 50.0
