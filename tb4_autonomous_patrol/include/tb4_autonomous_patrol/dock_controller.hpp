@@ -38,6 +38,8 @@ public:
   bool idle() const { return state_ == State::IDLE; }
   bool realMode() const { return !simulated_; }
   bool canConfirmDock() const;
+  // En hardware exige estado reciente antes de habilitar navegación.
+  bool initializeFromDockStatus();
   static const char* name(State s);
 
 private:
