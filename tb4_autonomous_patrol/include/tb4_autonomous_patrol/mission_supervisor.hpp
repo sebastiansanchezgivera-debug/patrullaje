@@ -76,6 +76,9 @@ private:
   rclcpp_action::Client<Action>::SharedPtr nav_client_;
   std::unique_ptr<SafeRecovery> recovery_;
   std::unique_ptr<DockController> dock_;
+  bool startup_dock_checked_ = false;
+  bool waiting_dock_logged_ = false;
+  bool operator_armed_ = false;
   bool recovery_requested_ = false;
   int recovery_spin_count_ = 0;
   int recovery_direction_ = 0;
