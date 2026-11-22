@@ -233,6 +233,17 @@ void MissionSupervisor::commandCallback(const std_msgs::msg::String::SharedPtr m
       markEvent("RESUME_RECHAZADO_BATERIA_O_DATOS");
       return;
     }
+    // En el TurtleBot4 real, RESUME arma la misión únicamente con datos,
+    // mapa y sensores válidos. No sustituye al e-stop del Create 3.
+    if (node_->get_parameter("require_operator_arm").as_bool()) {
+      if (!startup_dock_checked_ || !laserFresh() || obstaclePresent() ||
+          !makeTarget(GoalKind::HOME).valid ||
+          !makeTarget(GoalKind::STATION, station_index_).valid) {
+        markEvent("RESUME_RECHAZADO_SENSORES_O_DESTINOS_SIN_VALIDAR");
+        return;
+      }
+      operator_armed_ = true;
+    }
     battery_hold_ = false;
     pause_requested_ = false;
     // HOME solo queda libre tras verificar el undocking.
@@ -617,6 +628,9 @@ void MissionSupervisor::markEvent(const std::string & message) {
 std::string MissionSupervisor::statusName() const {
   if (!fault_.empty()) return "FAULT";
   if (canceled_) return "CANCELLING";
+  if (dock_->realMode() && !startup_dock_checked_) return "WAITING_DOCK_STATUS";
+  if (node_->get_parameter("require_operator_arm").as_bool() && !operator_armed_)
+    return "AWAITING_ARM";
   if (!laserFresh()) return "LIDAR_NO_VALIDO";
   if (!batteryFresh()) return "BATERIA_SIN_DATOS";
   if (recovery_requested_ || recovery_->busy()) return "RECOVERY_SPIN";
@@ -665,9 +679,32 @@ BT::NodeStatus MissionSupervisor::onRunning() {
   updateBatteryLatch();
   advanceDocking();
 
+  // No mover el TurtleBot4 físico antes de conocer el estado inicial de dock.
+  // Cuando está acoplado, el operador deberá ordenar RESUME para desacoplar.
+  if (!canceled_ && fault_.empty() && dock_->realMode() && !startup_dock_checked_) {
+    if (!dock_->initializeFromDockStatus()) {
+      if (!waiting_dock_logged_) {
+        waiting_dock_logged_ = true;
+        markEvent("ESPERANDO_DOCK_STATUS_FISICO");
+      }
+      publishStatus();
+      return BT::NodeStatus::RUNNING;
+    }
+    startup_dock_checked_ = true;
+    if (dock_->docked()) {
+      home_arrived_ = true;
+      markEvent("INICIO_ACOPLADO_ESPERANDO_RESUME");
+    } else {
+      markEvent("INICIO_NO_ACOPLADO_ESPERANDO_RESUME");
+    }
+  }
+
+  const bool arm_required = node_->get_parameter("require_operator_arm").as_bool();
   Target wanted;
-  if (!canceled_ && fault_.empty()) wanted = requestedTarget();
+  if (!canceled_ && fault_.empty() && (!arm_required || operator_armed_))
+    wanted = requestedTarget();
   if (!wanted.valid && !canceled_ && fault_.empty() &&
+      (!arm_required || operator_armed_) &&
       laserFresh() && batteryFresh() && !obstaclePresent() &&
       !home_arrived_ && !station_waiting_ && !emergency_arrived_ &&
       !pause_requested_ && !battery_hold_ && !recovery_requested_ &&
