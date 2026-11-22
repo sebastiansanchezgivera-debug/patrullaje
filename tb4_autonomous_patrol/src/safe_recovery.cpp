@@ -1,4 +1,5 @@
 #include "tb4_autonomous_patrol/safe_recovery.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <utility>
@@ -16,39 +17,78 @@ std::chrono::steady_clock::duration durationSeconds(double d) {
 SafeRecovery::SafeRecovery(rclcpp::Node::SharedPtr node,
                            rclcpp::Node::SharedPtr action_node)
     : node_(std::move(node)) {
-  client_ = rclcpp_action::create_client<Spin>(action_node, "/spin");
+  spin_client_ = rclcpp_action::create_client<Spin>(action_node, "/spin");
+  backup_client_ = rclcpp_action::create_client<BackUp>(action_node, "/backup");
 }
 
 void SafeRecovery::updateScan(const sensor_msgs::msg::LaserScan::SharedPtr msg) {
   scan_time_ = Clock::now();
   scan_valid_ = msg->angle_increment > 0.0 && msg->range_max > 0.0;
+  scan_complete_ = scan_valid_ &&
+      msg->angle_min <= -PI + 0.10 && msg->angle_max >= PI - 0.10;
   footprint_clear_ = scan_valid_;
-  // Con menos de 360 grados NO se puede asegurar el despeje posterior.
-  scan_complete_ = (msg->angle_min <= -PI + 0.10 &&
-                    msg->angle_max >= PI - 0.10);
+  rear_clear_ = scan_complete_;
   side_left_ = side_right_ = 0.0;
-  int left_count = 0, right_count = 0;
+  int left_count = 0, right_count = 0, rear_count = 0;
+
   const double laser_x = node_->get_parameter("recovery_laser_x_m").as_double();
-  const double clearance = node_->get_parameter("robot_radius_m").as_double() +
+  const double radius = node_->get_parameter("robot_radius_m").as_double() +
       node_->get_parameter("recovery_margin_m").as_double();
+  const double distance = node_->get_parameter("recovery_backup_m").as_double();
+  if (!std::isfinite(laser_x) || !std::isfinite(radius) || radius <= 0.0 ||
+      !std::isfinite(distance) || distance <= 0.0 ||
+      msg->range_max < distance + radius + std::fabs(laser_x)) {
+    rear_clear_ = false;
+  }
+
   for (size_t i = 0; i < msg->ranges.size(); ++i) {
-    const double angle = msg->angle_min + static_cast<double>(i) * msg->angle_increment;
-    const double distance = msg->ranges[i];
-    if (!std::isfinite(distance) || distance < msg->range_min ||
-        distance > msg->range_max) {
-      // Una lectura NaN o menor al mínimo impide asegurar el despeje.
-      if (std::isnan(distance) || distance < msg->range_min) footprint_clear_ = false;
+    const double angle = msg->angle_min +
+        static_cast<double>(i) * msg->angle_increment;
+    const double r = msg->ranges[i];
+    const bool behind = std::fabs(angle) >= 2.35; // Sector posterior (+/-45 grados)
+    if (behind) ++rear_count;
+
+    // No deducir espacio libre a partir de NaN o una lectura inferior al minimo.
+    if (std::isnan(r) || r < msg->range_min || r < 0.0) {
+      if (behind) rear_clear_ = false;
+      footprint_clear_ = false;
       continue;
     }
-    const double bx = laser_x + distance * std::cos(angle);
-    const double by = distance * std::sin(angle);
-    if (std::hypot(bx, by) < clearance) footprint_clear_ = false;
-    if (angle >= 0.35 && angle <= 1.5) { side_left_ += std::min(distance, 2.0); ++left_count; }
-    if (angle <= -0.35 && angle >= -1.5) { side_right_ += std::min(distance, 2.0); ++right_count; }
+    if (!std::isfinite(r)) {
+      if (r < 0.0) { rear_clear_ = false; footprint_clear_ = false; }
+      continue; // +inf significa sin retorno dentro del rango anunciado
+    }
+    if (r > msg->range_max) continue;
+
+    // Coordenadas del impacto expresadas en base_link (laser orientado al frente).
+    const double x = laser_x + r * std::cos(angle);
+    const double y = r * std::sin(angle);
+    if (std::hypot(x, y) < radius) footprint_clear_ = false;
+
+    // Colision con el circulo barrido durante BackUp desde x=0 a x=-distance.
+    const double closest_x = std::clamp(x, -distance, 0.0);
+    if (std::hypot(x - closest_x, y) < radius) rear_clear_ = false;
+
+    if (angle >= 0.35 && angle <= 1.5) {
+      side_left_ += std::min(r, 2.0);
+      ++left_count;
+    }
+    if (angle <= -0.35 && angle >= -1.5) {
+      side_right_ += std::min(r, 2.0);
+      ++right_count;
+    }
   }
   if (left_count > 0) side_left_ /= left_count;
   if (right_count > 0) side_right_ /= right_count;
   if (left_count == 0 || right_count == 0) scan_valid_ = false;
+  if (rear_count < 10 || !scan_complete_) rear_clear_ = false;
+}
+
+bool SafeRecovery::freshScan() const {
+  const double age = std::chrono::duration<double>(Clock::now() - scan_time_).count();
+  const double max_age = node_->get_parameter("laser_timeout_sec").as_double();
+  return scan_valid_ && std::isfinite(max_age) && max_age > 0.0 &&
+         age <= max_age;
 }
 
 void SafeRecovery::fail(std::string message) {
@@ -57,112 +97,205 @@ void SafeRecovery::fail(std::string message) {
   RCLCPP_WARN(node_->get_logger(), "RECOVERY: %s", reason_.c_str());
 }
 
-void SafeRecovery::start(int requested_direction) {
+void SafeRecovery::start(int requested_direction, bool allow_backup) {
   if (busy()) return;
   reset();
   if (!node_->get_parameter("enable_spin_recovery").as_bool()) {
     fail("Spin deshabilitado por parametro"); return;
   }
-  const double age = std::chrono::duration<double>(Clock::now() - scan_time_).count();
-  if (!scan_valid_ || age > node_->get_parameter("laser_timeout_sec").as_double()) {
-    fail("Lectura LiDAR no valida/reciente"); return;
-  }
+  if (!freshScan()) { fail("Lectura LiDAR no valida/reciente"); return; }
   if (!footprint_clear_) { fail("Radio de giro sin despeje suficiente"); return; }
+
+  // En hardware no se acepta la excepcion de cobertura parcial.
   if (!scan_complete_) {
     const bool stage_only =
         node_->get_parameter("allow_partial_scan_sim_only").as_bool() &&
         node_->get_parameter("simulate_docking").as_bool() &&
         node_->get_parameter("use_sim_time").as_bool();
     if (!stage_only) {
-      fail("LiDAR parcial: giro prohibido salvo modo experimental Stage"); return;
+      fail("LiDAR parcial: recovery no segura para robot fisico"); return;
     }
   }
-  if (!client_->action_server_is_ready()) { fail("Accion Nav2 /spin no disponible"); return; }
+
+  last_direction_ = requested_direction == 0 ?
+      (side_left_ >= side_right_ ? 1 : -1) :
+      (requested_direction > 0 ? 1 : -1);
+
+  // La simulacion Stage con LiDAR parcial NUNCA autoriza retroceso a ciegas.
+  if (allow_backup &&
+      node_->get_parameter("enable_backup_recovery").as_bool() &&
+      rear_clear_ && scan_complete_) {
+    startBackup();
+  } else {
+    if (allow_backup && node_->get_parameter("enable_backup_recovery").as_bool()) {
+      RCLCPP_WARN(node_->get_logger(),
+          "RECOVERY: retroceso OMITIDO: cobertura posterior/espacio no validos");
+    }
+    startSpin();
+  }
+}
+
+void SafeRecovery::startBackup() {
+  if (!backup_client_->action_server_is_ready()) {
+    fail("Accion Nav2 /backup no disponible"); return;
+  }
+  const double meters = node_->get_parameter("recovery_backup_m").as_double();
+  const double speed = node_->get_parameter("recovery_backup_speed_mps").as_double();
+  const double seconds = node_->get_parameter("recovery_backup_timeout_sec").as_double();
+  if (!std::isfinite(meters) || meters <= 0.0 || meters > 0.30 ||
+      !std::isfinite(speed) || speed <= 0.0 || speed > 0.10 ||
+      !std::isfinite(seconds) || seconds < 2.0) {
+    fail("Parametros BackUp fuera de limites"); return;
+  }
+
+  BackUp::Goal goal;
+  goal.target.x = -meters; // Nav2 Humble: negativo = retroceder
+  goal.target.y = 0.0;
+  goal.target.z = 0.0;
+  goal.speed = static_cast<float>(speed);
+  goal.time_allowance.sec = static_cast<int32_t>(std::ceil(seconds));
+  goal.time_allowance.nanosec = 0;
+  backup_handle_.reset(); backup_send_ = {}; backup_result_ = {};
+  cancel_pending_ = false; cancellation_reason_.clear();
+
+  rclcpp_action::Client<BackUp>::SendGoalOptions opts;
+  const auto logger = node_->get_logger();
+  const auto clock = node_->get_clock();
+  opts.feedback_callback = [logger, clock](
+      BackupHandle::SharedPtr, const std::shared_ptr<const BackUp::Feedback> f) {
+      RCLCPP_INFO_THROTTLE(logger, *clock, 1000,
+          "RECOVERY: BackUp %.3f m", double(f->distance_traveled));
+    };
+  backup_send_ = backup_client_->async_send_goal(goal, opts);
+  deadline_ = Clock::now() + durationSeconds(seconds + 3.0);
+  phase_ = Phase::BACKUP;
+  state_ = State::SENDING;
+  RCLCPP_INFO(node_->get_logger(), "RECOVERY: solicitando BackUp %.2f m a %.2f m/s",
+      meters, speed);
+}
+
+void SafeRecovery::startSpin() {
+  if (!freshScan() || !footprint_clear_) {
+    fail("LiDAR no confirma seguridad para girar"); return;
+  }
+  if (!spin_client_->action_server_is_ready()) {
+    fail("Accion Nav2 /spin no disponible"); return;
+  }
   const double degrees = node_->get_parameter("recovery_spin_deg").as_double();
   const double seconds = node_->get_parameter("recovery_spin_timeout_sec").as_double();
   if (!std::isfinite(degrees) || degrees <= 0.0 || degrees > 90.0 ||
       !std::isfinite(seconds) || seconds < 1.0) {
-    fail("Parametros de giro invalidos"); return;
+    fail("Parametros Spin invalidos"); return;
   }
+
   Spin::Goal goal;
-  // Elegimos un lado la primera vez y lo mantenemos durante toda la
-  // exploracion: evita oscilaciones izquierda-derecha entre segmentos.
-  last_direction_ = requested_direction == 0 ?
-      (side_left_ >= side_right_ ? 1 : -1) :
-      (requested_direction > 0 ? 1 : -1);
   goal.target_yaw = static_cast<float>(last_direction_ * degrees * PI / 180.0);
   goal.time_allowance.sec = static_cast<int32_t>(std::ceil(seconds));
   goal.time_allowance.nanosec = 0;
-  handle_.reset(); send_ = {}; result_ = {}; cancel_pending_ = false;
-  // Diagnostico de progreso: no altera el movimiento ni las protecciones.
-  rclcpp_action::Client<Spin>::SendGoalOptions options;
+  spin_handle_.reset(); spin_send_ = {}; spin_result_ = {};
+  cancel_pending_ = false; cancellation_reason_.clear();
+
+  rclcpp_action::Client<Spin>::SendGoalOptions opts;
   const auto logger = node_->get_logger();
   const auto clock = node_->get_clock();
-  options.feedback_callback =
-      [logger, clock](Handle::SharedPtr,
-                      const std::shared_ptr<const Spin::Feedback> feedback) {
-        RCLCPP_INFO_THROTTLE(
-            logger, *clock, 1000,
-            "RECOVERY: Spin avance angular %.1f grados",
-            static_cast<double>(feedback->angular_distance_traveled) * 180.0 / PI);
-      };
-  send_ = client_->async_send_goal(goal, options);
+  opts.feedback_callback = [logger, clock](
+      SpinHandle::SharedPtr, const std::shared_ptr<const Spin::Feedback> f) {
+      RCLCPP_INFO_THROTTLE(logger, *clock, 1000,
+          "RECOVERY: Spin avance angular %.1f grados",
+          double(f->angular_distance_traveled) * 180.0 / PI);
+    };
+  spin_send_ = spin_client_->async_send_goal(goal, opts);
   deadline_ = Clock::now() + durationSeconds(seconds + 3.0);
+  phase_ = Phase::SPIN;
   state_ = State::SENDING;
-  RCLCPP_INFO(node_->get_logger(), "RECOVERY: solicitando Spin %.1f grados", double(goal.target_yaw) * 180.0 / PI);
+  RCLCPP_INFO(node_->get_logger(), "RECOVERY: solicitando Spin %.1f grados",
+      double(goal.target_yaw) * 180.0 / PI);
+}
+
+void SafeRecovery::requestCancel(std::string why) {
+  if (!busy() || state_ == State::CANCELING) return;
+  cancellation_reason_ = std::move(why);
+  state_ = State::CANCELING;
+  cancel_pending_ = true;
+  deadline_ = Clock::now() + 8s;
+  if (phase_ == Phase::BACKUP && backup_handle_) {
+    backup_client_->async_cancel_goal(backup_handle_);
+  } else if (phase_ == Phase::SPIN && spin_handle_) {
+    spin_client_->async_cancel_goal(spin_handle_);
+  }
+  RCLCPP_WARN(node_->get_logger(), "RECOVERY: solicitando cancelacion: %s",
+      cancellation_reason_.c_str());
 }
 
 void SafeRecovery::tick() {
   if (!busy()) return;
-  if (state_ == State::SENDING || (state_ == State::CANCELING && !handle_)) {
-    if (send_.valid() && send_.wait_for(0ms) == std::future_status::ready) {
-      handle_ = send_.get(); send_ = {};
-      if (!handle_) { fail("Nav2 rechazo Spin"); return; }
-      RCLCPP_INFO(node_->get_logger(), "RECOVERY: Nav2 ACEPTO Spin");
-      result_ = client_->async_get_result(handle_);
-      if (cancel_pending_) {
-        client_->async_cancel_goal(handle_);
-        state_ = State::CANCELING;
+
+  // Verificacion continua: si el LiDAR deja de ser reciente o detecta peligro,
+  // ordenar cancelacion del comportamiento activo, incluso tras aceptacion.
+  if (state_ != State::CANCELING) {
+    if (!freshScan()) requestCancel("LiDAR sin datos recientes");
+    else if (phase_ == Phase::BACKUP && !rear_clear_)
+      requestCancel("Espacio posterior ya no seguro");
+    else if (phase_ == Phase::SPIN && !footprint_clear_)
+      requestCancel("Radio de giro no despejado");
+  }
+
+  if (phase_ == Phase::BACKUP) {
+    if (backup_send_.valid() &&
+        backup_send_.wait_for(0ms) == std::future_status::ready) {
+      backup_handle_ = backup_send_.get(); backup_send_ = {};
+      if (!backup_handle_) { fail("Nav2 rechazo BackUp"); return; }
+      backup_result_ = backup_client_->async_get_result(backup_handle_);
+      if (cancel_pending_) backup_client_->async_cancel_goal(backup_handle_);
+      else { state_ = State::ACTIVE;
+        RCLCPP_INFO(node_->get_logger(), "RECOVERY: Nav2 ACEPTO BackUp"); }
+    }
+    if (backup_result_.valid() &&
+        backup_result_.wait_for(0ms) == std::future_status::ready) {
+      const auto result = backup_result_.get(); backup_result_ = {};
+      if (cancel_pending_) { fail(cancellation_reason_); return; }
+      if (result.code == rclcpp_action::ResultCode::SUCCEEDED) {
+        RCLCPP_INFO(node_->get_logger(), "RECOVERY: BackUp SUCCEEDED");
+        startSpin();
       } else {
-        state_ = State::ACTIVE;
+        fail("BackUp no finalizo en SUCCEEDED; no se gira");
       }
+      return;
+    }
+  } else if (phase_ == Phase::SPIN) {
+    if (spin_send_.valid() &&
+        spin_send_.wait_for(0ms) == std::future_status::ready) {
+      spin_handle_ = spin_send_.get(); spin_send_ = {};
+      if (!spin_handle_) { fail("Nav2 rechazo Spin"); return; }
+      spin_result_ = spin_client_->async_get_result(spin_handle_);
+      if (cancel_pending_) spin_client_->async_cancel_goal(spin_handle_);
+      else { state_ = State::ACTIVE;
+        RCLCPP_INFO(node_->get_logger(), "RECOVERY: Nav2 ACEPTO Spin"); }
+    }
+    if (spin_result_.valid() &&
+        spin_result_.wait_for(0ms) == std::future_status::ready) {
+      const auto result = spin_result_.get(); spin_result_ = {};
+      if (cancel_pending_) { fail(cancellation_reason_); return; }
+      if (result.code == rclcpp_action::ResultCode::SUCCEEDED) {
+        state_ = State::SUCCEEDED;
+        reason_.clear();
+        RCLCPP_INFO(node_->get_logger(), "RECOVERY: Spin SUCCEEDED");
+      } else {
+        fail("Spin no finalizo en SUCCEEDED");
+      }
+      return;
     }
   }
-  if ((state_ == State::ACTIVE || state_ == State::CANCELING) && result_.valid() &&
-      result_.wait_for(0ms) == std::future_status::ready) {
-    const auto result = result_.get(); result_ = {};
-    if (state_ == State::CANCELING) { fail("Spin cancelado"); return; }
-    const char * code_name = "DESCONOCIDO";
-    if (result.code == rclcpp_action::ResultCode::SUCCEEDED) code_name = "SUCCEEDED";
-    else if (result.code == rclcpp_action::ResultCode::ABORTED) code_name = "ABORTED";
-    else if (result.code == rclcpp_action::ResultCode::CANCELED) code_name = "CANCELED";
-    else if (result.code == rclcpp_action::ResultCode::UNKNOWN) code_name = "UNKNOWN";
-    const double elapsed = result.result
-        ? static_cast<double>(result.result->total_elapsed_time.sec) +
-              static_cast<double>(result.result->total_elapsed_time.nanosec) * 1.0e-9
-        : -1.0;
-    RCLCPP_INFO(node_->get_logger(),
-                "RECOVERY: resultado Spin=%s, tiempo_nav2=%.2f s",
-                code_name, elapsed);
-    if (result.code == rclcpp_action::ResultCode::SUCCEEDED) {
-      state_ = State::SUCCEEDED;
-      reason_.clear();
-    } else {
-      fail(std::string("Spin termino en estado ") + code_name +
-           "; verificar /cmd_vel_raw, /cmd_vel y logs de behavior_server");
-    }
-    return;
-  }
+
   if (Clock::now() >= deadline_) {
-    if (handle_) client_->async_cancel_goal(handle_);
-    fail("Tiempo de Spin excedido; verificar cancelacion en Nav2");
+    if (state_ == State::CANCELING) {
+      fail("Nav2 NO confirmo cancelacion; detener mision y verificar velocidades");
+    } else {
+      requestCancel("Tiempo de recuperacion excedido");
+    }
   }
 }
 
 void SafeRecovery::cancel() {
-  if (!busy()) return;
-  cancel_pending_ = true;
-  state_ = State::CANCELING;
-  if (handle_) client_->async_cancel_goal(handle_);
-  deadline_ = Clock::now() + 10s;
+  requestCancel("Cancelacion solicitada por supervisor");
 }

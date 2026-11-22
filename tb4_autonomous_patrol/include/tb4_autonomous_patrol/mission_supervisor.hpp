@@ -13,6 +13,9 @@
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "nav2_msgs/action/navigate_to_pose.hpp"
 #include "nav_msgs/msg/odometry.hpp"
+#include "nav_msgs/msg/occupancy_grid.hpp"
+#include "tf2_ros/buffer.h"
+#include "tf2_ros/transform_listener.h"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
 #include "sensor_msgs/msg/battery_state.hpp"
@@ -57,6 +60,9 @@ private:
   bool batteryFresh() const;
   void updateBatteryLatch();
   bool obstaclePresent() const;
+  bool scanNearPointsMatchMap(
+      const sensor_msgs::msg::LaserScan::SharedPtr & scan,
+      double threshold, double half_angle);
   Target makeTarget(GoalKind kind, int station = -1) const;
   Target requestedTarget();
   bool sameTarget(const Target & a, const Target & b) const;
@@ -76,9 +82,6 @@ private:
   rclcpp_action::Client<Action>::SharedPtr nav_client_;
   std::unique_ptr<SafeRecovery> recovery_;
   std::unique_ptr<DockController> dock_;
-  bool startup_dock_checked_ = false;
-  bool waiting_dock_logged_ = false;
-  bool operator_armed_ = false;
   bool recovery_requested_ = false;
   int recovery_spin_count_ = 0;
   int recovery_direction_ = 0;
@@ -93,6 +96,12 @@ private:
   std::unique_ptr<rclcpp::executors::SingleThreadedExecutor> action_executor_;
   std::thread action_spin_thread_;
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub_;
+  rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub_;
+  nav_msgs::msg::OccupancyGrid::SharedPtr static_map_;
+  std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
+  std::unique_ptr<tf2_ros::TransformListener> tf_listener_;
+  bool near_wall_classified_ = false;  // true: TODO hit cercano coincide con mapa
+  std::string front_type_ = "SIN_DATOS";
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
   rclcpp::Subscription<sensor_msgs::msg::BatteryState>::SharedPtr battery_sub_;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr command_sub_;

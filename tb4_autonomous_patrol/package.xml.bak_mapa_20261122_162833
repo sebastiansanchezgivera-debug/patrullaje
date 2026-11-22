@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>tb4_autonomous_patrol</name>
+  <version>0.1.0</version>
+  <description>Supervisor autonomo de patrullaje TurtleBot4 con BehaviorTree.CPP 4, Nav2 y monitorizacion Groot2.</description>
+  <maintainer email="sebas@example.invalid">Sebas</maintainer>
+  <license>Apache-2.0</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>rclcpp</depend>
+  <depend>rclcpp_action</depend>
+  <depend>nav2_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>behaviortree_cpp</depend>
+  <depend>ament_index_cpp</depend>
+  <exec_depend>rclpy</exec_depend>
+  <!-- Integracion opcional con Create 3; instalar para hardware real. -->
+  <exec_depend>nav2_bringup</exec_depend>
+  <exec_depend>nav2_collision_monitor</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

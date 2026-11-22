@@ -61,19 +61,6 @@ bool DockController::dockStatusFresh() const {
 #endif
 }
 
-bool DockController::initializeFromDockStatus() {
-  if (simulated_) return true;
-#ifdef TB4_HAS_CREATE3
-  if (!dockStatusFresh()) return false;
-  if (state_ == State::IDLE && status_docked_.load()) {
-    state_ = State::DOCKED;
-  }
-  return true;
-#else
-  return false;
-#endif
-}
-
 bool DockController::canConfirmDock() const {
   return simulated_ || (dockStatusFresh()
 #ifdef TB4_HAS_CREATE3

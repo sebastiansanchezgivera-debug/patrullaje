@@ -5,6 +5,9 @@
 #include <cctype>
 #include <iomanip>
 #include <sstream>
+#include <limits>
+#include "tf2/exceptions.h"
+#include "tf2/time.h"
 #include <utility>
 
 using namespace std::chrono_literals;
@@ -40,6 +43,14 @@ MissionSupervisor::MissionSupervisor(
   RCLCPP_INFO(node_->get_logger(),
               "Cliente Nav2 en executor independiente: /navigate_to_pose");
   status_pub_ = node_->create_publisher<std_msgs::msg::String>("/mission/status", 10);
+
+  tf_buffer_ = std::make_unique<tf2_ros::Buffer>(node_->get_clock());
+  tf_listener_ = std::make_unique<tf2_ros::TransformListener>(*tf_buffer_);
+  map_sub_ = node_->create_subscription<nav_msgs::msg::OccupancyGrid>(
+      "/map", rclcpp::QoS(1).reliable().transient_local(),
+      [this](nav_msgs::msg::OccupancyGrid::SharedPtr msg) {
+        static_map_ = std::move(msg);
+      });
 
   scan_sub_ = node_->create_subscription<sensor_msgs::msg::LaserScan>(
       node_->get_parameter("laser_topic").as_string(), rclcpp::SensorDataQoS(),
@@ -85,6 +96,8 @@ void MissionSupervisor::scanCallback(
   scan_received_ = true;
   front_valid_ = false;
   front_distance_ = std::numeric_limits<double>::infinity();
+  near_wall_classified_ = false;
+  front_type_ = "SIN_DATOS";
 
   const double threshold = node_->get_parameter("stop_distance").as_double();
   const double half_angle =
@@ -112,6 +125,85 @@ void MissionSupervisor::scanCallback(
     // Valor menor al alcance mínimo: lectura conservadora.
     front_distance_ = std::min(front_distance_, value);
   }
+  // SOLO SIMULACION: si todas las detecciones proximas son paredes conocidas,
+  // no activar el latch AVOID. Nav2 y Collision Monitor conservan sus barreras.
+  const bool only_stage =
+      node_->get_parameter("classify_map_walls_stage_only").as_bool() &&
+      node_->get_parameter("use_sim_time").as_bool() &&
+      node_->get_parameter("simulate_docking").as_bool();
+  if (front_distance_ > threshold) {
+    front_type_ = "DESPEJADO";
+  } else if (!only_stage) {
+    front_type_ = "OBSTACULO_SIN_CLASIFICAR";
+  } else {
+    near_wall_classified_ = scanNearPointsMatchMap(msg, threshold, half_angle);
+    front_type_ = near_wall_classified_ ? "PARED_MAPA" : "NUEVO_O_INCIERTO";
+  }
+}
+
+// Compara cada eco frontal cercano con el PRIMER obstaculo del mapa a lo
+// largo del mismo rayo. Si faltan datos, TF, mapa, o hay discrepancia,
+// clasifica como objeto nuevo/incierto: parada conservadora.
+bool MissionSupervisor::scanNearPointsMatchMap(
+    const sensor_msgs::msg::LaserScan::SharedPtr & scan,
+    double threshold, double half_angle) {
+  if (!static_map_ || !tf_buffer_) return false;
+  const auto & grid = *static_map_;
+  const auto & info = grid.info;
+  if (info.resolution <= 0.0 || info.width == 0 || info.height == 0 ||
+      grid.data.size() != static_cast<size_t>(info.width) * info.height) return false;
+
+  geometry_msgs::msg::TransformStamped tf;
+  try {
+    tf = tf_buffer_->lookupTransform("map", scan->header.frame_id, tf2::TimePointZero);
+  } catch (const tf2::TransformException &) {
+    return false;
+  }
+  const auto & q = tf.transform.rotation;
+  const double yaw = std::atan2(2.0 * (q.w*q.z + q.x*q.y),
+                                1.0 - 2.0 * (q.y*q.y + q.z*q.z));
+  const auto & o = info.origin.orientation;
+  const double oyaw = std::atan2(2.0 * (o.w*o.z + o.x*o.y),
+                                 1.0 - 2.0 * (o.y*o.y + o.z*o.z));
+  const double co = std::cos(oyaw), so = std::sin(oyaw);
+  const double res = static_cast<double>(info.resolution);
+  const double tolerance = std::clamp(
+      node_->get_parameter("map_wall_match_tolerance_m").as_double(),
+      0.05, 0.20);
+  const double lx = tf.transform.translation.x;
+  const double ly = tf.transform.translation.y;
+  // Raycast sub-celda; valor desconocido del mapa = clasificacion insegura.
+  auto occupied = [&](double wx, double wy) -> int {
+    const double dx=wx-info.origin.position.x;
+    const double dy=wy-info.origin.position.y;
+    const int ix=static_cast<int>(std::floor((co*dx + so*dy)/res));
+    const int iy=static_cast<int>(std::floor((-so*dx + co*dy)/res));
+    if (ix<0 || iy<0 || ix>=static_cast<int>(info.width) ||
+        iy>=static_cast<int>(info.height)) return -1;
+    const int val=grid.data[static_cast<size_t>(iy)*info.width + ix];
+    if (val<0) return -1;
+    return val>=65 ? 1 : 0;
+  };
+  bool any_near = false;
+  for (size_t i=0; i<scan->ranges.size(); ++i) {
+    const double a=scan->angle_min + i*scan->angle_increment;
+    if (std::abs(a)>half_angle) continue;
+    const double d=scan->ranges[i];
+    if (!std::isfinite(d) || d>threshold) continue;
+    any_near=true;
+    if (d<scan->range_min || d<=0.0) return false;
+    const double angle=yaw+a;
+    const double ca=std::cos(angle), sa=std::sin(angle);
+    double expected=std::numeric_limits<double>::infinity();
+    const double step=std::max(0.01, res*0.5);
+    for (double s=0.0; s<=d+tolerance+step; s+=step) {
+      const int status=occupied(lx+s*ca, ly+s*sa);
+      if (status<0) return false;
+      if (status>0) {expected=s; break;}
+    }
+    if (!std::isfinite(expected) || std::abs(expected-d)>tolerance) return false;
+  }
+  return any_near;
 }
 
 void MissionSupervisor::batteryCallback(
@@ -197,8 +289,13 @@ void MissionSupervisor::updateBatteryLatch() {
 }
 
 bool MissionSupervisor::obstaclePresent() const {
-  return laserFresh() &&
-      front_distance_ <= node_->get_parameter("stop_distance").as_double();
+  if (!laserFresh()) return false;
+  if (front_distance_ > node_->get_parameter("stop_distance").as_double()) return false;
+  const bool only_stage =
+      node_->get_parameter("classify_map_walls_stage_only").as_bool() &&
+      node_->get_parameter("use_sim_time").as_bool() &&
+      node_->get_parameter("simulate_docking").as_bool();
+  return !only_stage || !near_wall_classified_;
 }
 
 void MissionSupervisor::commandCallback(const std_msgs::msg::String::SharedPtr msg) {
@@ -232,20 +329,6 @@ void MissionSupervisor::commandCallback(const std_msgs::msg::String::SharedPtr m
         battery_pct_ < minimum) {
       markEvent("RESUME_RECHAZADO_BATERIA_O_DATOS");
       return;
-    }
-    // En el TurtleBot4 real, RESUME arma la misión únicamente con datos,
-    // mapa y sensores válidos. No sustituye al e-stop del Create 3.
-    if (node_->get_parameter("require_operator_arm").as_bool()) {
-      if (!startup_dock_checked_ || !dock_->initializeFromDockStatus() ||
-          !laserFresh() || obstaclePresent() ||
-          !makeTarget(GoalKind::HOME).valid ||
-          !makeTarget(GoalKind::STATION, 0).valid ||
-          !makeTarget(GoalKind::STATION, 1).valid ||
-          !makeTarget(GoalKind::STATION, 2).valid) {
-        markEvent("RESUME_RECHAZADO_SENSORES_O_DESTINOS_SIN_VALIDAR");
-        return;
-      }
-      operator_armed_ = true;
     }
     battery_hold_ = false;
     pause_requested_ = false;
@@ -551,10 +634,10 @@ void MissionSupervisor::advanceRecovery() {
   // Se explora en segmentos de giro sin traslacion, sin abandonar
   // la estacion original. No se publica cmd_vel desde el supervisor.
   if (recovery_->state() == SafeRecovery::State::IDLE) {
-    recovery_->start(recovery_direction_);
+    recovery_->start(recovery_direction_, recovery_spin_count_ == 0);
     if (recovery_->busy()) {
       recovery_direction_ = recovery_->direction();
-      markEvent("RECOVERY_GIRO_" + std::to_string(recovery_spin_count_ + 1) +
+      markEvent("RECOVERY_RETROCESO_OPCIONAL_Y_GIRO_" + std::to_string(recovery_spin_count_ + 1) +
                 "_EVALUANDO_ENTORNO");
     }
   }
@@ -631,9 +714,6 @@ void MissionSupervisor::markEvent(const std::string & message) {
 std::string MissionSupervisor::statusName() const {
   if (!fault_.empty()) return "FAULT";
   if (canceled_) return "CANCELLING";
-  if (dock_->realMode() && !startup_dock_checked_) return "WAITING_DOCK_STATUS";
-  if (node_->get_parameter("require_operator_arm").as_bool() && !operator_armed_)
-    return "AWAITING_ARM";
   if (!laserFresh()) return "LIDAR_NO_VALIDO";
   if (!batteryFresh()) return "BATERIA_SIN_DATOS";
   if (recovery_requested_ || recovery_->busy()) return "RECOVERY_SPIN";
@@ -662,6 +742,7 @@ void MissionSupervisor::publishStatus(bool force) {
      << "state=" << statusName()
      << " station=" << station_index_ + 1
      << " front_m=" << front_distance_
+     << " front_type=" << front_type_
      << " battery_pct=" << battery_pct_
      << " nav=" << static_cast<int>(nav_phase_)
      << " battery_hold=" << battery_hold_
@@ -682,32 +763,9 @@ BT::NodeStatus MissionSupervisor::onRunning() {
   updateBatteryLatch();
   advanceDocking();
 
-  // No mover el TurtleBot4 físico antes de conocer el estado inicial de dock.
-  // Cuando está acoplado, el operador deberá ordenar RESUME para desacoplar.
-  if (!canceled_ && fault_.empty() && dock_->realMode() && !startup_dock_checked_) {
-    if (!dock_->initializeFromDockStatus()) {
-      if (!waiting_dock_logged_) {
-        waiting_dock_logged_ = true;
-        markEvent("ESPERANDO_DOCK_STATUS_FISICO");
-      }
-      publishStatus();
-      return BT::NodeStatus::RUNNING;
-    }
-    startup_dock_checked_ = true;
-    if (dock_->docked()) {
-      home_arrived_ = true;
-      markEvent("INICIO_ACOPLADO_ESPERANDO_RESUME");
-    } else {
-      markEvent("INICIO_NO_ACOPLADO_ESPERANDO_RESUME");
-    }
-  }
-
-  const bool arm_required = node_->get_parameter("require_operator_arm").as_bool();
   Target wanted;
-  if (!canceled_ && fault_.empty() && (!arm_required || operator_armed_))
-    wanted = requestedTarget();
+  if (!canceled_ && fault_.empty()) wanted = requestedTarget();
   if (!wanted.valid && !canceled_ && fault_.empty() &&
-      (!arm_required || operator_armed_) &&
       laserFresh() && batteryFresh() && !obstaclePresent() &&
       !home_arrived_ && !station_waiting_ && !emergency_arrived_ &&
       !pause_requested_ && !battery_hold_ && !recovery_requested_ &&

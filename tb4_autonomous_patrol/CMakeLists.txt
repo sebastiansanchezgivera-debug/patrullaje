@@ -14,6 +14,8 @@ find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(nav2_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
@@ -32,7 +34,7 @@ add_executable(patrol_runner
 target_include_directories(patrol_runner PRIVATE include)
 target_link_libraries(patrol_runner Threads::Threads)
 ament_target_dependencies(patrol_runner
-  rclcpp rclcpp_action nav2_msgs nav_msgs geometry_msgs sensor_msgs
+  rclcpp rclcpp_action nav2_msgs nav_msgs tf2 tf2_ros geometry_msgs sensor_msgs
   std_msgs behaviortree_cpp ament_index_cpp
 )
 
