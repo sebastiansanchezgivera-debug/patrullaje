@@ -1,0 +1,54 @@
+# PERFIL FISICO - TurtleBot4 / Create 3 / ROS 2 Humble
+# Coordenadas -9999 son marcadores: rellenar en el mapa real.
+# No ejecutar antes de validar mapa, TF, sensores, robot y cadena cmd_vel.
+tb4_autonomous_patrol:
+  ros__parameters:
+    use_sim_time: false
+    require_operator_arm: true
+    station_1_x: -9999.0
+    station_1_y: -9999.0
+    station_1_yaw: 0.0
+    station_1_wait_sec: 2.0
+    station_2_x: -9999.0
+    station_2_y: -9999.0
+    station_2_yaw: 0.0
+    station_2_wait_sec: 2.0
+    station_3_x: -9999.0
+    station_3_y: -9999.0
+    station_3_yaw: 0.0
+    station_3_wait_sec: 2.0
+    home_x: -9999.0
+    home_y: -9999.0
+    home_yaw: 0.0
+    laser_topic: /scan
+    odom_topic: /odom
+    stop_distance: 0.45
+    front_half_angle_deg: 15.0
+    laser_timeout_sec: 0.7
+    avoid_attempt_timeout_sec: 15.0
+    avoid_max_cycles_without_progress: 2
+    avoid_progress_reset_distance_m: 0.60
+    battery_topic: /battery_state
+    simulate_battery: false
+    sim_battery_pct: 100.0
+    battery_threshold_pct: 20.0
+    battery_resume_pct: 25.0
+    battery_timeout_sec: 5.0
+    # Desactivado hasta comprobar cobertura LiDAR posterior y geometria
+    enable_spin_recovery: false
+    recovery_spin_deg: 35.0
+    recovery_max_spins: 3
+    recovery_spin_timeout_sec: 20.0
+    robot_radius_m: 0.22        # PROVISIONAL: medir y corregir
+    recovery_margin_m: 0.06     # PROVISIONAL: validar
+    recovery_laser_x_m: 0.0     # PROVISIONAL: usar transformacion TF real
+    allow_partial_scan_sim_only: false
+    simulate_docking: false
+    enable_real_docking: true
+    dock_action_name: /dock
+    undock_action_name: /undock
+    dock_status_topic: /dock_status
+    sim_dock_duration_sec: 3.0
+    sim_undock_duration_sec: 3.0
+    dock_timeout_sec: 65.0
+    undock_timeout_sec: 50.0
