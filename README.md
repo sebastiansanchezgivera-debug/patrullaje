@@ -41,3 +41,14 @@ son específicos del paquete stage_ros2 y del mundo utilizado; documentarlos o a
 
 El mapa de Stage solo es reutilizable en el robot físico si corresponde al entorno real y permite
 localización válida. Redefinir estaciones para cada mapa.
+
+## Adaptación física (noviembre de 2026)
+
+La versión del código ya incorpora armado manual, inicialización desde `/dock_status` y un perfil físico separado.
+
+- [Manual de adaptación, instalación, SLAM y seguridad](docs/ADAPTACION_FISICA_Y_MANUAL.md)
+- [Parámetros TurtleBot4 real](tb4_autonomous_patrol/config/mission_params_real.yaml)
+- [Plantilla de Collision Monitor (NO ejecutar directamente)](tb4_autonomous_patrol/config/collision_monitor_real.example.yaml)
+- [Diagnóstico de hardware sin movimiento](tb4_autonomous_patrol/scripts/check_real_preflight.sh)
+
+**Importante:** todavía no se ha compilado ni probado esta modificación en un TurtleBot4 físico. No utilizar valores de ejemplo para habilitar navegación. El comando `STOP` del supervisor solicita regresar a HOME y **no** equivale al e-stop físico.
