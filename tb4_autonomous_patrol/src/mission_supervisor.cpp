@@ -236,9 +236,12 @@ void MissionSupervisor::commandCallback(const std_msgs::msg::String::SharedPtr m
     // En el TurtleBot4 real, RESUME arma la misión únicamente con datos,
     // mapa y sensores válidos. No sustituye al e-stop del Create 3.
     if (node_->get_parameter("require_operator_arm").as_bool()) {
-      if (!startup_dock_checked_ || !laserFresh() || obstaclePresent() ||
+      if (!startup_dock_checked_ || !dock_->initializeFromDockStatus() ||
+          !laserFresh() || obstaclePresent() ||
           !makeTarget(GoalKind::HOME).valid ||
-          !makeTarget(GoalKind::STATION, station_index_).valid) {
+          !makeTarget(GoalKind::STATION, 0).valid ||
+          !makeTarget(GoalKind::STATION, 1).valid ||
+          !makeTarget(GoalKind::STATION, 2).valid) {
         markEvent("RESUME_RECHAZADO_SENSORES_O_DESTINOS_SIN_VALIDAR");
         return;
       }
