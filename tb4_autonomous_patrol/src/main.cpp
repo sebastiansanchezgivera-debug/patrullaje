@@ -32,6 +32,7 @@ int main(int argc, char ** argv) {
   node->declare_parameter<double>("home_y", -9999.0);
   node->declare_parameter<double>("home_yaw", 0.0);
 
+  node->declare_parameter<bool>("require_operator_arm", false);
   node->declare_parameter<std::string>("laser_topic", "/base_scan");
   node->declare_parameter<double>("stop_distance", 0.45);
   node->declare_parameter<double>("front_half_angle_deg", 15.0);
@@ -68,6 +69,28 @@ int main(int argc, char ** argv) {
   node->declare_parameter<double>("battery_threshold_pct", 20.0);
   node->declare_parameter<double>("battery_resume_pct", 25.0);
   node->declare_parameter<double>("battery_timeout_sec", 5.0);
+
+#ifndef TB4_HAS_CREATE3
+  if (!node->get_parameter("use_sim_time").as_bool()) {
+    RCLCPP_ERROR(node->get_logger(),
+      "Compilado sin irobot_create_msgs; imposible operar docking fisico");
+    rclcpp::shutdown();
+    return 2;
+  }
+#endif
+
+  // El modo físico no permite usar, por error, sensores o docking simulados.
+  if (!node->get_parameter("use_sim_time").as_bool() &&
+      (node->get_parameter("simulate_battery").as_bool() ||
+       node->get_parameter("simulate_docking").as_bool() ||
+       !node->get_parameter("enable_real_docking").as_bool() ||
+       node->get_parameter("allow_partial_scan_sim_only").as_bool() ||
+       !node->get_parameter("require_operator_arm").as_bool())) {
+    RCLCPP_ERROR(node->get_logger(),
+      "Configuracion fisica insegura: bateria/docking reales, LiDAR no parcial y armado obligatorio");
+    rclcpp::shutdown();
+    return 2;
+  }
 
   auto blackboard = BT::Blackboard::create();
   blackboard->set("node", node);
