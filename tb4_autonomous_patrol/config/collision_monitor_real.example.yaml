@@ -1,0 +1,28 @@
+# SOLO PLANTILLA: NO ACTIVAR directamente en hardware.
+# Necesita medicion real de huella, sensor y TF, y remapeos de TODAS
+# las fuentes de velocidad hacia /cmd_vel_raw. No ofrece STOP fijo a 0.45 m.
+collision_monitor:
+  ros__parameters:
+    use_sim_time: false
+    base_frame_id: base_link     # confirmar en TF
+    odom_frame_id: odom          # confirmar en TF
+    cmd_vel_in_topic: /cmd_vel_raw
+    cmd_vel_out_topic: /cmd_vel
+    transform_tolerance: 0.3
+    source_timeout: 0.5
+    base_shift_correction: true
+    stop_pub_timeout: 2.0
+    polygons: ["ApproachFootprint"]
+    ApproachFootprint:
+      type: circle
+      radius: 0.30             # EJEMPLO, NO MEDIDO
+      action_type: approach
+      time_before_collision: 2.0
+      simulation_time_step: 0.05
+      max_points: 1
+      visualize: true
+      polygon_pub_topic: /approach_footprint_real
+    observation_sources: ["scan"]
+    scan:
+      type: scan
+      topic: /scan
