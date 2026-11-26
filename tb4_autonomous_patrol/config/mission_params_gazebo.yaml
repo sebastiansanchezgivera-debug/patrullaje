@@ -1,0 +1,56 @@
+# SOLO GAZEBO / ROS 2 Humble. No usar en hardware.
+# Coordenadas -9999: medir en RViz antes de iniciar la mision.
+# El supervisor inicia automaticamente: verificar preflight y cadena de velocidad.
+tb4_autonomous_patrol:
+  ros__parameters:
+    use_sim_time: true
+    station_1_x: -9999.0
+    station_1_y: -9999.0
+    station_1_yaw: 0.0
+    station_1_wait_sec: 2.0
+    station_2_x: -9999.0
+    station_2_y: -9999.0
+    station_2_yaw: 0.0
+    station_2_wait_sec: 2.0
+    station_3_x: -9999.0
+    station_3_y: -9999.0
+    station_3_yaw: 0.0
+    station_3_wait_sec: 2.0
+    home_x: -9999.0
+    home_y: -9999.0
+    home_yaw: 0.0
+    front_scan_in_base_frame: true
+    classify_map_walls_stage_only: false
+    enable_backup_recovery: false
+    laser_topic: /scan
+    odom_topic: /odom
+    stop_distance: 0.45
+    front_half_angle_deg: 15.0
+    laser_timeout_sec: 0.7
+    avoid_attempt_timeout_sec: 15.0
+    avoid_max_cycles_without_progress: 2
+    avoid_progress_reset_distance_m: 0.60
+    battery_topic: /battery_state
+    simulate_battery: true
+    sim_battery_pct: 100.0
+    battery_threshold_pct: 20.0
+    battery_resume_pct: 25.0
+    battery_timeout_sec: 5.0
+    # Desactivado hasta comprobar cobertura LiDAR posterior y geometria
+    enable_spin_recovery: false
+    recovery_spin_deg: 35.0
+    recovery_max_spins: 3
+    recovery_spin_timeout_sec: 20.0
+    robot_radius_m: 0.22        # PROVISIONAL: medir y corregir
+    recovery_margin_m: 0.06     # PROVISIONAL: validar
+    recovery_laser_x_m: 0.0     # PROVISIONAL: usar transformacion TF real
+    allow_partial_scan_sim_only: false
+    simulate_docking: true
+    enable_real_docking: false
+    dock_action_name: /dock
+    undock_action_name: /undock
+    dock_status_topic: /dock_status
+    sim_dock_duration_sec: 3.0
+    sim_undock_duration_sec: 3.0
+    dock_timeout_sec: 65.0
+    undock_timeout_sec: 50.0

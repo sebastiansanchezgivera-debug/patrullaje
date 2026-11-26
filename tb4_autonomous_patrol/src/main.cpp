@@ -39,6 +39,8 @@ int main(int argc, char ** argv) {
   node->declare_parameter<bool>("classify_map_walls_stage_only", false);
   node->declare_parameter<double>("map_wall_match_tolerance_m", 0.12);
   node->declare_parameter<double>("front_half_angle_deg", 15.0);
+  // Gazebo: sector frontal referido al eje de base_link.
+  node->declare_parameter<bool>("front_scan_in_base_frame", false);
   node->declare_parameter<double>("laser_timeout_sec", 0.7);
   node->declare_parameter<double>("avoid_attempt_timeout_sec", 15.0);
   node->declare_parameter<std::string>("odom_topic", "/odom");
