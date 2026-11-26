@@ -8,7 +8,7 @@ En cada terminal:
 ```bash
 source /opt/ros/humble/setup.bash
 source ~/ros2_ws/install/setup.bash
-export ROS_DOMAIN_ID=42 ROS_LOCALHOST_ONLY=1 RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+export ROS_DOMAIN_ID=0 ROS_LOCALHOST_ONLY=1 RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 export LIBGL_ALWAYS_SOFTWARE=1 QT_QPA_PLATFORM=xcb
 unset ROS_DISCOVERY_SERVER
 ```

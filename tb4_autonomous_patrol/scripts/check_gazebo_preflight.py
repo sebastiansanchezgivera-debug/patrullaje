@@ -5,9 +5,9 @@ import sys
 import time
 import math
 if (os.environ.get("ROS_DISTRO") != "humble"
-        or os.environ.get("ROS_DOMAIN_ID") != "42"
+        or os.environ.get("ROS_DOMAIN_ID", "0") != "0"
         or os.environ.get("ROS_LOCALHOST_ONLY") != "1"):
-    sys.exit("ERROR: cargar Humble, ROS_DOMAIN_ID=42 y ROS_LOCALHOST_ONLY=1.")
+    sys.exit("ERROR: cargar Humble, ROS_DOMAIN_ID=0 y ROS_LOCALHOST_ONLY=1.")
 
 import rclpy
 from rclpy.node import Node
