@@ -30,7 +30,8 @@ tb4_autonomous_patrol:
     battery_threshold_pct: 20.0
     battery_resume_pct: 25.0
     battery_timeout_sec: 5.0
-    enable_spin_recovery: false
+    # Giro habilitado con TF planar; BackUp sigue deshabilitado hasta validacion.
+    enable_spin_recovery: true
     recovery_spin_deg: 35.0
     recovery_max_spins: 3
     recovery_spin_timeout_sec: 10.0

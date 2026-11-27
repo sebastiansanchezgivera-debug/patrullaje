@@ -21,29 +21,39 @@ SafeRecovery::SafeRecovery(rclcpp::Node::SharedPtr node,
   backup_client_ = rclcpp_action::create_client<BackUp>(action_node, "/backup");
 }
 
-void SafeRecovery::updateScan(const sensor_msgs::msg::LaserScan::SharedPtr msg) {
+void SafeRecovery::updateScan(const sensor_msgs::msg::LaserScan::SharedPtr msg,
+                              double laser_x, double laser_y, double laser_yaw) {
   scan_time_ = Clock::now();
-  scan_valid_ = msg->angle_increment > 0.0 && msg->range_max > 0.0;
+  scan_valid_ = std::isfinite(laser_x) && std::isfinite(laser_y) &&
+      std::isfinite(laser_yaw) && std::isfinite(msg->angle_increment) &&
+      std::isfinite(msg->angle_min) && std::isfinite(msg->angle_max) &&
+      std::isfinite(msg->range_max) && std::isfinite(msg->range_min) &&
+      msg->range_min >= 0.0 && msg->range_max > msg->range_min &&
+      msg->angle_increment > 0.0 && !msg->ranges.empty();
+  if (!scan_valid_) { invalidateScan(); return; }
   scan_complete_ = scan_valid_ &&
-      msg->angle_min <= -PI + 0.10 && msg->angle_max >= PI - 0.10;
+      msg->angle_min <= -PI + 0.10 && msg->angle_max >= PI - 0.10 &&
+      (msg->ranges.size() - 1) * msg->angle_increment >= 2.0 * PI - 0.20;
   footprint_clear_ = scan_valid_;
   rear_clear_ = scan_complete_;
   side_left_ = side_right_ = 0.0;
   int left_count = 0, right_count = 0, rear_count = 0;
 
-  const double laser_x = node_->get_parameter("recovery_laser_x_m").as_double();
   const double radius = node_->get_parameter("robot_radius_m").as_double() +
       node_->get_parameter("recovery_margin_m").as_double();
   const double distance = node_->get_parameter("recovery_backup_m").as_double();
-  if (!std::isfinite(laser_x) || !std::isfinite(radius) || radius <= 0.0 ||
-      !std::isfinite(distance) || distance <= 0.0 ||
-      msg->range_max < distance + radius + std::fabs(laser_x)) {
+  if (!std::isfinite(radius) || radius <= 0.0 ||
+      msg->range_max < radius + std::hypot(laser_x, laser_y)) {
+    invalidateScan(); return;
+  }
+  if (!std::isfinite(distance) || distance <= 0.0 ||
+      msg->range_max < distance + radius + std::hypot(laser_x, laser_y)) {
     rear_clear_ = false;
   }
 
   for (size_t i = 0; i < msg->ranges.size(); ++i) {
-    const double angle = msg->angle_min +
-        static_cast<double>(i) * msg->angle_increment;
+    const double angle = std::remainder(msg->angle_min +
+        static_cast<double>(i) * msg->angle_increment + laser_yaw, 2.0 * PI);
     const double r = msg->ranges[i];
     const bool behind = std::fabs(angle) >= 2.35; // Sector posterior (+/-45 grados)
     if (behind) ++rear_count;
@@ -60,9 +70,9 @@ void SafeRecovery::updateScan(const sensor_msgs::msg::LaserScan::SharedPtr msg) 
     }
     if (r > msg->range_max) continue;
 
-    // Coordenadas del impacto expresadas en base_link (laser orientado al frente).
+    // Impacto en base_link: traslacion y yaw del montaje planar.
     const double x = laser_x + r * std::cos(angle);
-    const double y = r * std::sin(angle);
+    const double y = laser_y + r * std::sin(angle);
     if (std::hypot(x, y) < radius) footprint_clear_ = false;
 
     // Colision con el circulo barrido durante BackUp desde x=0 a x=-distance.

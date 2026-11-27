@@ -27,7 +27,9 @@ public:
 
   SafeRecovery(rclcpp::Node::SharedPtr node,
                rclcpp::Node::SharedPtr action_node);
-  void updateScan(const sensor_msgs::msg::LaserScan::SharedPtr msg);
+  void invalidateScan() { scan_valid_ = false; footprint_clear_ = false; rear_clear_ = false; scan_complete_ = false; }
+  void updateScan(const sensor_msgs::msg::LaserScan::SharedPtr msg,
+                  double laser_x, double laser_y, double laser_yaw);
   void start(int requested_direction = 0, bool allow_backup = true);
   int direction() const { return last_direction_; }
   void tick();

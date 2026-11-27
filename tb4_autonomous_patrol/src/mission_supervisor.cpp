@@ -91,7 +91,8 @@ BT::NodeStatus MissionSupervisor::onStart() {
 
 void MissionSupervisor::scanCallback(
     const sensor_msgs::msg::LaserScan::SharedPtr msg) {
-  recovery_->updateScan(msg);
+  // Invalidar primero: un TF ausente nunca conserva despeje anterior.
+  recovery_->invalidateScan();
   last_scan_ = Steady::now();
   scan_received_ = true;
   front_valid_ = false;
@@ -111,11 +112,15 @@ void MissionSupervisor::scanCallback(
   }
 
   double scan_yaw = 0.0;
+  double scan_x = node_->get_parameter("recovery_laser_x_m").as_double();
+  double scan_y = 0.0;
   const bool base_sector = node_->get_parameter("front_scan_in_base_frame").as_bool();
   if (base_sector) {
     try {
       const auto tf = tf_buffer_->lookupTransform("base_link", msg->header.frame_id,
                                                   tf2::TimePointZero);
+      scan_x = tf.transform.translation.x;
+      scan_y = tf.transform.translation.y;
       const auto & q = tf.transform.rotation;
       scan_yaw = std::atan2(2.0 * (q.w*q.z + q.x*q.y),
                             1.0 - 2.0 * (q.y*q.y + q.z*q.z));
@@ -124,6 +129,7 @@ void MissionSupervisor::scanCallback(
       return;  // front_valid_ sigue falso; no emitir metas nuevas.
     }
   }
+  recovery_->updateScan(msg, scan_x, scan_y, scan_yaw);
   for (size_t i = 0; i < msg->ranges.size(); ++i) {
     const double raw_angle = msg->angle_min +
         static_cast<double>(i) * msg->angle_increment;
