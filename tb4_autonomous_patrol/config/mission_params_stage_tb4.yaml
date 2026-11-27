@@ -1,5 +1,5 @@
 # SOLO STAGE TB4. Reemplazar todas las coordenadas -9999.0 por poses validadas en map.
-# Bateria y docking internos simulados; no acciona hardware ni usa servidores Create 3.
+# Perfil de integracion Stage con create3_sim. No usar en hardware.
 tb4_autonomous_patrol:
   ros__parameters:
     use_sim_time: true
@@ -25,10 +25,11 @@ tb4_autonomous_patrol:
     laser_timeout_sec: 0.7
     avoid_attempt_timeout_sec: 15.0
     battery_topic: /battery_state
-    simulate_battery: true
+    simulate_battery: false
     sim_battery_pct: 100.0
     battery_threshold_pct: 20.0
-    battery_resume_pct: 25.0
+    battery_resume_pct: 80.0
+    auto_resume_after_charge: true
     battery_timeout_sec: 5.0
     # Giro habilitado con TF planar; BackUp sigue deshabilitado hasta validacion.
     enable_spin_recovery: true
@@ -39,8 +40,9 @@ tb4_autonomous_patrol:
     recovery_margin_m: 0.06
     recovery_laser_x_m: -0.04
     allow_partial_scan_sim_only: false
-    simulate_docking: true
+    simulate_docking: false
     enable_real_docking: false
+    enable_stage_docking_actions: true
     dock_action_name: /dock
     undock_action_name: /undock
     dock_status_topic: /dock_status

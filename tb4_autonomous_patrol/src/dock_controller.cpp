@@ -69,6 +69,17 @@ bool DockController::canConfirmDock() const {
   );
 }
 
+bool DockController::stageNavigationReady() const {
+  if (!node_->get_parameter("enable_stage_docking_actions").as_bool()) return true;
+  if (!node_->get_parameter("use_sim_time").as_bool() ||
+      node_->get_parameter("enable_real_docking").as_bool() || simulated_) return false;
+#ifdef TB4_HAS_CREATE3
+  return dockStatusFresh() && !status_docked_.load();
+#else
+  return false;
+#endif
+}
+
 void DockController::startDock() {
   if (busy() || state_ == State::DOCKED) return;
   error_.clear();
@@ -81,8 +92,11 @@ void DockController::startDock() {
 #ifndef TB4_HAS_CREATE3
   failed("irobot_create_msgs no instalado al compilar; no es posible docking real");
 #else
-  if (!node_->get_parameter("enable_real_docking").as_bool()) {
-    failed("Docking fisico deshabilitado: enable_real_docking=false");
+  const bool sim_time = node_->get_parameter("use_sim_time").as_bool();
+  const bool stage = node_->get_parameter("enable_stage_docking_actions").as_bool();
+  const bool real = node_->get_parameter("enable_real_docking").as_bool();
+  if (!(sim_time ? (stage && !real) : (real && !stage))) {
+    failed("Acciones de docking no autorizadas para el entorno");
     return;
   }
   if (!dock_client_->action_server_is_ready()) {
@@ -115,8 +129,11 @@ void DockController::startUndock() {
 #ifndef TB4_HAS_CREATE3
   failed("irobot_create_msgs no instalado al compilar; no es posible undocking real");
 #else
-  if (!node_->get_parameter("enable_real_docking").as_bool()) {
-    failed("Undocking fisico deshabilitado: enable_real_docking=false");
+  const bool sim_time = node_->get_parameter("use_sim_time").as_bool();
+  const bool stage = node_->get_parameter("enable_stage_docking_actions").as_bool();
+  const bool real = node_->get_parameter("enable_real_docking").as_bool();
+  if (!(sim_time ? (stage && !real) : (real && !stage))) {
+    failed("Acciones de docking no autorizadas para el entorno");
     return;
   }
   if (!undock_client_->action_server_is_ready()) {

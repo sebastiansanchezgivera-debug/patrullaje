@@ -38,6 +38,7 @@ public:
   bool idle() const { return state_ == State::IDLE; }
   bool realMode() const { return !simulated_; }
   bool canConfirmDock() const;
+  bool stageNavigationReady() const;
   static const char* name(State s);
 
 private:

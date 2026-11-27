@@ -483,7 +483,7 @@ MissionSupervisor::Target MissionSupervisor::requestedTarget() {
   Target no_target;
   // Sin sensor fresco o durante cualquier accion de recuperacion/carga,
   // nunca emitir nuevos objetivos Nav2.
-  if (!laserFresh() || !batteryFresh() || recovery_requested_ ||
+  if (!dock_->stageNavigationReady() || !laserFresh() || !batteryFresh() || recovery_requested_ ||
       recovery_->busy() || dock_->busy() || dock_->docked()) return no_target;
   if (home_arrived_ && dock_->idle() && !pause_requested_ && !battery_hold_) {
     home_arrived_ = false;  // undocking confirmado
@@ -718,6 +718,17 @@ void MissionSupervisor::advanceDocking() {
       markEvent("UNDOCKING_COMPLETADO_REANUDAR_PATRULLA");
     } else if (state == DockController::State::UNDOCKING) markEvent("UNDOCKING_INICIADO");
   }
+  // STOP del operador tiene prioridad. Solo salir automaticamente por bateria.
+  if (state == DockController::State::DOCKED && !canceled_ && fault_.empty() &&
+      battery_hold_ && !pause_requested_ &&
+      node_->get_parameter("auto_resume_after_charge").as_bool() &&
+      batteryFresh() && laserFresh() && dock_->canConfirmDock() &&
+      std::isfinite(battery_pct_) &&
+      battery_pct_ >= node_->get_parameter("battery_resume_pct").as_double()) {
+    battery_hold_ = false;
+    dock_->startUndock();
+    markEvent("BATERIA_RECUPERADA_SALIDA_AUTOMATICA");
+  }
 }
 
 void MissionSupervisor::setFault(const std::string & why) {
@@ -742,6 +753,7 @@ std::string MissionSupervisor::statusName() const {
   if (dock_->state() == DockController::State::DOCKING) return "DOCKING";
   if (dock_->state() == DockController::State::UNDOCKING) return "UNDOCKING";
   if (dock_->docked()) return "DOCKED";
+  if (!dock_->stageNavigationReady()) return "DOCK_STATUS_NO_VALIDO";
   if (avoid_loop_hold_) return "OBSTACLE_WAIT";
   if (obstaclePresent()) return "OBSTACLE_WAIT";
   if (avoiding_) return "AVOID_REQUESTED";
@@ -788,7 +800,7 @@ BT::NodeStatus MissionSupervisor::onRunning() {
   Target wanted;
   if (!canceled_ && fault_.empty()) wanted = requestedTarget();
   if (!wanted.valid && !canceled_ && fault_.empty() &&
-      laserFresh() && batteryFresh() && !obstaclePresent() &&
+      dock_->stageNavigationReady() && laserFresh() && batteryFresh() && !obstaclePresent() &&
       !home_arrived_ && !station_waiting_ && !emergency_arrived_ &&
       !pause_requested_ && !battery_hold_ && !recovery_requested_ &&
       !avoid_loop_hold_ &&

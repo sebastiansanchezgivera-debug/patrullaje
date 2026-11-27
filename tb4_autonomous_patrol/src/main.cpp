@@ -65,6 +65,8 @@ int main(int argc, char ** argv) {
   // Carga: Stage usa tiempos simulados; en hardware se requiere confirmacion.
   node->declare_parameter<bool>("simulate_docking", true);
   node->declare_parameter<bool>("enable_real_docking", false);
+  node->declare_parameter<bool>("enable_stage_docking_actions", false);
+  node->declare_parameter<bool>("auto_resume_after_charge", false);
   node->declare_parameter<std::string>("dock_action_name", "/dock");
   node->declare_parameter<std::string>("undock_action_name", "/undock");
   node->declare_parameter<std::string>("dock_status_topic", "/dock_status");
