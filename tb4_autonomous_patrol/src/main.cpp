@@ -33,6 +33,8 @@ int main(int argc, char ** argv) {
   node->declare_parameter<double>("home_yaw", 0.0);
 
   node->declare_parameter<std::string>("laser_topic", "/base_scan");
+  // Opt-in para sensores con yaw distinto de base_link.
+  node->declare_parameter<bool>("front_scan_in_base_frame", false);
   node->declare_parameter<double>("stop_distance", 0.45);
   // Solo Stage: el mapa estático distingue paredes de objetos no cartografiados.
   // En hardware permanece deshabilitado por defecto; Collision Monitor intacto.

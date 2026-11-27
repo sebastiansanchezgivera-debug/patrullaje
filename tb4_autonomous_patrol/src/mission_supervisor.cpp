@@ -110,9 +110,25 @@ void MissionSupervisor::scanCallback(
     return;
   }
 
+  double scan_yaw = 0.0;
+  const bool base_sector = node_->get_parameter("front_scan_in_base_frame").as_bool();
+  if (base_sector) {
+    try {
+      const auto tf = tf_buffer_->lookupTransform("base_link", msg->header.frame_id,
+                                                  tf2::TimePointZero);
+      const auto & q = tf.transform.rotation;
+      scan_yaw = std::atan2(2.0 * (q.w*q.z + q.x*q.y),
+                            1.0 - 2.0 * (q.y*q.y + q.z*q.z));
+      if (!std::isfinite(scan_yaw)) return;
+    } catch (const tf2::TransformException &) {
+      return;  // front_valid_ sigue falso; no emitir metas nuevas.
+    }
+  }
   for (size_t i = 0; i < msg->ranges.size(); ++i) {
-    const double angle = msg->angle_min +
+    const double raw_angle = msg->angle_min +
         static_cast<double>(i) * msg->angle_increment;
+    const double angle = base_sector ? std::remainder(raw_angle + scan_yaw, 2.0 * PI)
+                                     : raw_angle;
     if (std::fabs(angle) > half_angle) continue;
 
     const double value = static_cast<double>(msg->ranges[i]);
@@ -127,7 +143,7 @@ void MissionSupervisor::scanCallback(
   }
   // SOLO SIMULACION: si todas las detecciones proximas son paredes conocidas,
   // no activar el latch AVOID. Nav2 y Collision Monitor conservan sus barreras.
-  const bool only_stage =
+  const bool only_stage = !base_sector &&
       node_->get_parameter("classify_map_walls_stage_only").as_bool() &&
       node_->get_parameter("use_sim_time").as_bool() &&
       node_->get_parameter("simulate_docking").as_bool();
