@@ -15,6 +15,9 @@ int main(int argc, char ** argv) {
   rclcpp::init(argc, argv);
   auto node = std::make_shared<rclcpp::Node>("tb4_autonomous_patrol");
 
+  node->declare_parameter<bool>("require_operator_arm",
+      !node->get_parameter("use_sim_time").as_bool());
+
   const double xs[3] = {0.28907108306884766, 19.907833099365234,
                         11.876189231872559};
   const double ys[3] = {0.05821871757507324, -0.03801417350769043,
@@ -104,7 +107,7 @@ int main(int argc, char ** argv) {
 
   RCLCPP_INFO(node->get_logger(), "MissionSupervisor iniciado; Groot2 puerto 1667");
   RCLCPP_INFO(node->get_logger(),
-              "Control: /mission/command (STOP, RESUME, CANCEL, AVOID, RESET_AVOID, WAIT, EMERGENCY_CANCEL)");
+              "Control: /mission/command (ARM, STOP, RESUME, CANCEL, AVOID, RESET_AVOID, WAIT, EMERGENCY_CANCEL)");
   RCLCPP_INFO(node->get_logger(), "Estado: /mission/status");
 
   // Executor persistente: procesa respuestas y resultados de Nav2.

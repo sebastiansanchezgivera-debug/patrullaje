@@ -69,6 +69,20 @@ bool DockController::canConfirmDock() const {
   );
 }
 
+bool DockController::readyForArm() const {
+  if (simulated_) return node_->get_parameter("use_sim_time").as_bool();
+#ifdef TB4_HAS_CREATE3
+  const bool sim = node_->get_parameter("use_sim_time").as_bool();
+  const bool stage = node_->get_parameter("enable_stage_docking_actions").as_bool();
+  const bool real = node_->get_parameter("enable_real_docking").as_bool();
+  return (sim ? (stage && !real) : (real && !stage)) &&
+      dockStatusFresh() && !status_docked_.load() &&
+      dock_client_->action_server_is_ready() && undock_client_->action_server_is_ready();
+#else
+  return false;
+#endif
+}
+
 bool DockController::stageNavigationReady() const {
   if (!node_->get_parameter("enable_stage_docking_actions").as_bool()) return true;
   if (!node_->get_parameter("use_sim_time").as_bool() ||

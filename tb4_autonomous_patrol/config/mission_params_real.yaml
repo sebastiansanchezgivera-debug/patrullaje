@@ -21,6 +21,7 @@ tb4_autonomous_patrol:
     home_y: -9999.0
     home_yaw: 0.0
     laser_topic: /scan
+    front_scan_in_base_frame: true
     odom_topic: /odom
     stop_distance: 0.45
     front_half_angle_deg: 15.0
@@ -32,10 +33,12 @@ tb4_autonomous_patrol:
     simulate_battery: false
     sim_battery_pct: 100.0
     battery_threshold_pct: 20.0
-    battery_resume_pct: 25.0
+    battery_resume_pct: 80.0
+    auto_resume_after_charge: false # habilitar solo despues de validar hardware
     battery_timeout_sec: 5.0
     # Desactivado hasta comprobar cobertura LiDAR posterior y geometria
     enable_spin_recovery: false
+    enable_backup_recovery: false
     recovery_spin_deg: 35.0
     recovery_max_spins: 3
     recovery_spin_timeout_sec: 20.0
@@ -44,7 +47,8 @@ tb4_autonomous_patrol:
     recovery_laser_x_m: 0.0     # PROVISIONAL: usar transformacion TF real
     allow_partial_scan_sim_only: false
     simulate_docking: false
-    enable_real_docking: true
+    enable_real_docking: false # activar tras validar acciones Create 3
+    enable_stage_docking_actions: false
     dock_action_name: /dock
     undock_action_name: /undock
     dock_status_topic: /dock_status

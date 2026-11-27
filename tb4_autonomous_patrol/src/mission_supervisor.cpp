@@ -8,6 +8,8 @@
 #include <limits>
 #include "tf2/exceptions.h"
 #include "tf2/time.h"
+#include "lifecycle_msgs/srv/get_state.hpp"
+#include "lifecycle_msgs/msg/state.hpp"
 #include <utility>
 
 using namespace std::chrono_literals;
@@ -28,6 +30,7 @@ MissionSupervisor::MissionSupervisor(
     const std::string & name, const BT::NodeConfig & config)
     : BT::StatefulActionNode(name, config) {
   node_ = config.blackboard->get<std::shared_ptr<rclcpp::Node>>("node");
+  operator_armed_ = !node_->get_parameter("require_operator_arm").as_bool();
   // Aislar las respuestas de Nav2 de los callbacks de LiDAR/estado.
   action_node_ = std::make_shared<rclcpp::Node>("tb4_patrol_nav_client");
   nav_client_ = rclcpp_action::create_client<Action>(
@@ -85,7 +88,7 @@ BT::PortsList MissionSupervisor::providedPorts() {
 }
 
 BT::NodeStatus MissionSupervisor::onStart() {
-  markEvent("PATRULLA_INICIADA");
+  markEvent(operator_armed_ ? "PATRULLA_INICIADA" : "ESPERANDO_ARM");
   return onRunning();
 }
 
@@ -320,9 +323,76 @@ bool MissionSupervisor::obstaclePresent() const {
   return !only_stage || !near_wall_classified_;
 }
 
+bool MissionSupervisor::readyForArm() {
+  if (!laserFresh() || !batteryFresh() || !odom_valid_ || !static_map_ ||
+      !nav_client_->action_server_is_ready() || !dock_->readyForArm()) {
+    markEvent("ARM_RECHAZADO_DATOS_NAV2_O_DOCK");
+    return false;
+  }
+  if (!node_->get_parameter("use_sim_time").as_bool() &&
+      node_->get_parameter("simulate_battery").as_bool()) {
+    markEvent("ARM_RECHAZADO_BATERIA_SIMULADA_EN_HARDWARE");
+    return false;
+  }
+  for (int i = 0; i < 3; ++i) {
+    if (!makeTarget(GoalKind::STATION, i).valid) {
+      markEvent("ARM_RECHAZADO_COORDENADAS_ESTACION");
+      return false;
+    }
+  }
+  if (!makeTarget(GoalKind::HOME).valid) {
+    markEvent("ARM_RECHAZADO_COORDENADAS_HOME");
+    return false;
+  }
+  try {
+    auto tf = tf_buffer_->lookupTransform("map", "base_link", tf2::TimePointZero);
+    const auto stamp = rclcpp::Time(tf.header.stamp, node_->get_clock()->get_clock_type());
+    const double age = (node_->now()-stamp).seconds();
+    if (!std::isfinite(age) || age > 2.0 || age < -2.0) {
+      markEvent("ARM_RECHAZADO_TF_OBSOLETO");
+      return false;
+    }
+  } catch (const tf2::TransformException &) {
+    markEvent("ARM_RECHAZADO_TF_MAP_BASE");
+    return false;
+  }
+  const auto pubs = node_->get_publishers_info_by_topic("/cmd_vel");
+  if (pubs.size() != 1 || pubs.front().node_name() != "collision_monitor") {
+    markEvent("ARM_RECHAZADO_CADENA_CMD_VEL");
+    return false;
+  }
+  for (const auto * name : {"map_server", "amcl", "collision_monitor",
+                             "controller_server", "planner_server",
+                             "behavior_server", "bt_navigator", "velocity_smoother"}) {
+    auto client = action_node_->create_client<lifecycle_msgs::srv::GetState>(
+        std::string("/") + name + "/get_state");
+    if (!client->wait_for_service(500ms)) {
+      markEvent(std::string("ARM_RECHAZADO_SERVICIO_") + name);
+      return false;
+    }
+    auto future = client->async_send_request(
+        std::make_shared<lifecycle_msgs::srv::GetState::Request>());
+    if (future.wait_for(1000ms) != std::future_status::ready ||
+        future.get()->current_state.id != lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE) {
+      markEvent(std::string("ARM_RECHAZADO_NODO_NO_ACTIVO_") + name);
+      return false;
+    }
+  }
+  return true;
+}
+
 void MissionSupervisor::commandCallback(const std_msgs::msg::String::SharedPtr msg) {
   const std::string command = upper(msg->data);
   if (canceled_ || !fault_.empty()) return;
+  if (!operator_armed_) {
+    if (command == "CANCEL") { canceled_ = true; markEvent("CANCELACION_DEFINITIVA"); }
+    else if (command == "ARM" && readyForArm()) {
+      operator_armed_ = true;
+      markEvent("PATRULLA_ARMADA");
+    } else if (command != "ARM") markEvent("COMANDO_RECHAZADO_ESPERANDO_ARM");
+    return;
+  }
+  if (command == "ARM") return;
 
   if (command == "STOP" || command == "PAUSE") {
     pause_requested_ = true;
@@ -428,7 +498,7 @@ void MissionSupervisor::commandCallback(const std_msgs::msg::String::SharedPtr m
 
 void MissionSupervisor::emergencyCallback(
     const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
-  if (canceled_ || !fault_.empty() || pause_requested_ || battery_hold_ ||
+  if (!operator_armed_ || canceled_ || !fault_.empty() || pause_requested_ || battery_hold_ ||
       dock_->busy() || dock_->docked()) {
     markEvent("EMERGENCIA_NO_ADMITIDA_EN_ESTADO_ACTUAL");
     return;
@@ -747,6 +817,7 @@ void MissionSupervisor::markEvent(const std::string & message) {
 std::string MissionSupervisor::statusName() const {
   if (!fault_.empty()) return "FAULT";
   if (canceled_) return "CANCELLING";
+  if (!operator_armed_) return "WAIT_ARM";
   if (!laserFresh()) return "LIDAR_NO_VALIDO";
   if (!batteryFresh()) return "BATERIA_SIN_DATOS";
   if (recovery_requested_ || recovery_->busy()) return "RECOVERY_SPIN";
@@ -793,6 +864,12 @@ void MissionSupervisor::publishStatus(bool force) {
 }
 
 BT::NodeStatus MissionSupervisor::onRunning() {
+  if (!operator_armed_) {
+    battery_pct_ = node_->get_parameter("simulate_battery").as_bool() ?
+        node_->get_parameter("sim_battery_pct").as_double() : battery_real_pct_;
+    publishStatus();
+    return canceled_ ? BT::NodeStatus::SUCCESS : BT::NodeStatus::RUNNING;
+  }
   updateAvoidProgress();
   updateBatteryLatch();
   advanceDocking();

@@ -39,6 +39,7 @@ public:
   bool realMode() const { return !simulated_; }
   bool canConfirmDock() const;
   bool stageNavigationReady() const;
+  bool readyForArm() const;
   static const char* name(State s);
 
 private:

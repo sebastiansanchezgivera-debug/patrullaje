@@ -56,6 +56,7 @@ private:
   void resetAvoidCycles();
   void commandCallback(const std_msgs::msg::String::SharedPtr msg);
   void emergencyCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
+  bool readyForArm();
   bool laserFresh() const;
   bool batteryFresh() const;
   void updateBatteryLatch();
@@ -119,6 +120,7 @@ private:
   bool battery_hold_ = false;
   Steady::time_point last_battery_{};
 
+  bool operator_armed_ = false;
   bool pause_requested_ = false;
   bool canceled_ = false;
   bool emergency_active_ = false;

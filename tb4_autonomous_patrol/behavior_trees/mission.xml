@@ -7,8 +7,10 @@
       <MissionSupervisor name="Supervisor_Nav2_Bateria_Emergencias"
                          state="{mission_state}" station="{station_pendiente}"/>
       <ReactiveFallback name="Estado_En_Tiempo_Real">
+        <MissionStateIndicator name="00_Esperando_ARM" equals="WAIT_ARM" state="{mission_state}"/>
         <MissionStateIndicator name="01_LiDAR_Sin_Datos" equals="LIDAR_NO_VALIDO" state="{mission_state}"/>
         <MissionStateIndicator name="02_Bateria_Sin_Datos" equals="BATERIA_SIN_DATOS" state="{mission_state}"/>
+        <MissionStateIndicator name="02b_Dock_Status_No_Valido" equals="DOCK_STATUS_NO_VALIDO" state="{mission_state}"/>
         <MissionStateIndicator name="03_Bloqueo_Esperar" equals="OBSTACLE_WAIT" state="{mission_state}"/>
         <MissionStateIndicator name="04_Evasion_Solicitada" equals="AVOID_REQUESTED" state="{mission_state}"/>
         <MissionStateIndicator name="04b_Giro_Recuperacion" equals="RECOVERY_SPIN" state="{mission_state}"/>
