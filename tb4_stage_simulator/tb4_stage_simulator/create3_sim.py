@@ -45,7 +45,7 @@ class StageSimulator(Node):
         self.scan = None
         self.scan_wall_time = 0.0
         self.mode = None
-        self.handle = None
+        self.goal_handle = None
         self.completion = None
         self.docked = False
         self.dock_pose = None
@@ -233,7 +233,7 @@ class StageSimulator(Node):
         return await self.execute_motion(handle)
 
     async def execute_motion(self, handle):
-        self.handle = handle
+        self.goal_handle = handle
         self.completion = Future()
         return await self.completion
 
@@ -241,7 +241,7 @@ class StageSimulator(Node):
         # Cero en la entrada protegida, nunca en /cmd_vel.
         self.vel_pub.publish(Twist())
         mode = self.mode
-        handle, completion = self.handle, self.completion
+        handle, completion = self.goal_handle, self.completion
         if ok and mode == 'dock':
             self.docked = True
             self.dock_pose = self.pose(self.get_clock().now())
@@ -257,7 +257,7 @@ class StageSimulator(Node):
         else:
             handle.abort()
         self.get_logger().info(f'{mode}: {reason}; is_docked={self.docked}')
-        self.mode = self.handle = self.completion = None
+        self.mode = self.goal_handle = self.completion = None
         completion.set_result(result)
 
     def motion_tick(self):
@@ -268,9 +268,9 @@ class StageSimulator(Node):
             if math.hypot(pose[0]-self.dock_pose[0], pose[1]-self.dock_pose[1]) > 0.09:
                 self.docked = False
                 self.dock_pose = None
-        if self.handle is None:
+        if self.goal_handle is None:
             return
-        if self.handle.is_cancel_requested:
+        if self.goal_handle.is_cancel_requested:
             self.finish(False, 'cancelado', True)
             return
         wall = time.monotonic()
@@ -290,7 +290,7 @@ class StageSimulator(Node):
         if self.mode == 'dock':
             feedback = Dock.Feedback()
             feedback.sees_dock = visible
-            self.handle.publish_feedback(feedback)
+            self.goal_handle.publish_feedback(feedback)
         if not visible:
             self.finish(False, 'dock no visible')
             return
